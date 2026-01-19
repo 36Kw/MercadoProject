@@ -1,10 +1,10 @@
 {
   "name": "Mercado Offline",
   "short_name": "Mercado",
-  "description": "Controle de produtos e estoque offline",
+  "description": "Controle de estoque offline com grupos e scanner",
   "start_url": "./index.html",
   "display": "standalone",
-  "background_color": "#2ecc71",
+  "background_color": "#f2f2f2",
   "theme_color": "#2ecc71",
   "orientation": "portrait",
   "icons": [

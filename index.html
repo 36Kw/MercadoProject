@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Mercado Offline</title>
 <meta name="theme-color" content="#2ecc71">
-<link rel="manifest" href="manifest.json">
+
 <style>
 body{font-family:Arial,sans-serif;margin:0;background:#f2f2f2;font-size:17px}
 header{background:#2ecc71;color:#fff;padding:16px;text-align:center;position:sticky;top:0;font-size:20px}
@@ -24,8 +24,10 @@ button{padding:12px 16px;margin:6px 0;border:none;border-radius:8px;font-size:17
 .hidden{display:none}
 input{width:100%;padding:10px;margin:6px 0;font-size:17px;border-radius:8px;border:1px solid #ccc;text-align:center}
 .small{font-size:15px;color:#555}
+#scanner{position:fixed;top:0;left:0;width:100%;height:100%;background:#000;z-index:999}
 </style>
 </head>
+
 <body>
 <header id="title">Grupos de Produtos</header>
 
@@ -46,15 +48,17 @@ input{width:100%;padding:10px;margin:6px 0;font-size:17px;border-radius:8px;bord
 
 <!-- FORM ITEM -->
 <div class="list hidden" id="itemForm">
-  <input id="barcode" placeholder="Código de barras">
+  <input id="barcode" placeholder="Código de barras" inputmode="numeric" pattern="[0-9]*">
   <input id="itemName" placeholder="Nome do produto">
   <input id="qty" type="number" placeholder="Quantidade">
   <input id="validade" type="date">
-  <input id="atacado" type="number" placeholder="Preço Atacado">
-  <input id="varejo" type="number" placeholder="Preço Varejo">
+  <input id="atacado" type="number" step="0.01" placeholder="Preço Atacado">
+  <input id="varejo" type="number" step="0.01" placeholder="Preço Varejo">
   <button class="btn-add" onclick="saveItem()">Salvar</button>
   <button class="btn-cancel" onclick="cancelItem()">Cancelar</button>
 </div>
+
+<div id="scanner" class="hidden"></div>
 
 <script src="https://unpkg.com/quagga@0.12.1/dist/quagga.min.js"></script>
 <script>
@@ -70,84 +74,151 @@ req.onupgradeneeded=e=>{
 };
 req.onsuccess=e=>{db=e.target.result;loadGroups()};
 
-function formatDate(d){if(!d)return'';const dt=new Date(d);return dt.toLocaleDateString('pt-BR')}
+function formatDate(d){if(!d)return'';return new Date(d).toLocaleDateString('pt-BR')}
 function formatBRL(v){return new Intl.NumberFormat('pt-BR',{style:'currency',currency:'BRL'}).format(v||0)}
 
 function showGroupForm(){groupForm.classList.remove('hidden')}
 function cancelGroup(){groupForm.classList.add('hidden');groupName.value='';editGroupId=null}
 
 function saveGroup(){
- const n=groupName.value.trim();if(!n)return alert('Nome inválido');
+ const n=groupName.value.trim();
+ if(!n)return alert('Nome inválido');
  const store=db.transaction('groups','readwrite').objectStore('groups');
  editGroupId?store.put({id:editGroupId,name:n}):store.add({name:n});
  cancelGroup();loadGroups();
 }
 
-function loadGroups(){groups.innerHTML='';
+function loadGroups(){
+ groups.innerHTML='';
  db.transaction('groups').objectStore('groups').openCursor().onsuccess=e=>{
-  const c=e.target.result;if(c){const g=c.value;
-   groups.innerHTML+=`<div class="card" onclick="openGroup(${g.id},'${g.name}')">
+  const c=e.target.result;
+  if(c){
+   const g=c.value;
+   groups.innerHTML+=`
+   <div class="card" onclick="openGroup(${g.id},'${g.name}')">
      <b>${g.name}</b><br>
      <button class="btn-edit" onclick="event.stopPropagation();editGroup(${g.id},'${g.name}')">Editar</button>
      <button class="btn-del" onclick="event.stopPropagation();delGroup(${g.id})">Excluir</button>
-   </div>`;c.continue();}}
+   </div>`;
+   c.continue();
+  }
+ }
 }
 
 function editGroup(id,name){editGroupId=id;groupName.value=name;showGroupForm()}
 function delGroup(id){if(confirm('Excluir grupo?')){
- db.transaction('groups','readwrite').objectStore('groups').delete(id);loadGroups();}}
+ db.transaction('groups','readwrite').objectStore('groups').delete(id);
+ loadGroups();
+}}
 
-function openGroup(id,name){currentGroup=id;currentGroupName=name;title.innerText=name;
- groupActions.classList.add('hidden');groups.classList.add('hidden');items.classList.remove('hidden');loadItems();}
+function openGroup(id,name){
+ currentGroup=id;currentGroupName=name;
+ title.innerText=name;
+ groupActions.classList.add('hidden');
+ groups.classList.add('hidden');
+ items.classList.remove('hidden');
+ loadItems();
+}
 
-function back(){title.innerText='Grupos de Produtos';groupActions.classList.remove('hidden');groups.classList.remove('hidden');items.classList.add('hidden')}
+function back(){
+ title.innerText='Grupos de Produtos';
+ groupActions.classList.remove('hidden');
+ groups.classList.remove('hidden');
+ items.classList.add('hidden');
+}
 
-function loadItems(){items.innerHTML=`
-<button class="btn-back" onclick="back()">← Voltar</button>
-<button class="btn-add" onclick="itemForm.classList.remove('hidden')">+ Novo Item</button>
-<button class="btn-add" onclick="scanAndEdit()">📷 Buscar por Código</button>`;
+function loadItems(){
+ items.innerHTML=`
+ <button class="btn-back" onclick="back()">← Voltar</button>
+ <button class="btn-add" onclick="newItem()">+ Novo Item</button>
+ <button class="btn-add" onclick="scanBarcode()">📷 Buscar por Código</button>
+ `;
  const idx=db.transaction('items').objectStore('items').index('groupId');
  idx.openCursor(IDBKeyRange.only(currentGroup)).onsuccess=e=>{
-  const c=e.target.result;if(c){const i=c.value;const col=color(i.updated);
-   items.innerHTML+=`<div class="card ${col}" onclick="this.lastElementChild.classList.toggle('hidden')">
-   <b>${i.name}</b><br>
-   <span class="small">Qtd:${i.qty} | ${formatBRL(i.atacado)} / ${formatBRL(i.varejo)} | Val:${formatDate(i.validade)}</span>
-   <div class="hidden">
-    Código:${i.barcode}<br>
-    Última modificação: ${formatDate(i.updated)}<br>
-    <button class="btn-edit" onclick="editItem(${i.id})">Editar</button>
-    <button class="btn-del" onclick="delItem(${i.id})">Excluir</button>
-   </div></div>`;c.continue();}}
+  const c=e.target.result;
+  if(c){
+   const i=c.value;
+   items.innerHTML+=`
+   <div class="card" onclick="this.lastElementChild.classList.toggle('hidden')">
+    <b>${i.name}</b><br>
+    <span class="small">Qtd:${i.qty} | ${formatBRL(i.atacado)} / ${formatBRL(i.varejo)} | Val:${formatDate(i.validade)}</span>
+    <div class="hidden">
+     Código:${i.barcode}<br>
+     <button class="btn-edit" onclick="editItem(${i.id})">Editar</button>
+     <button class="btn-del" onclick="delItem(${i.id})">Excluir</button>
+    </div>
+   </div>`;
+   c.continue();
+  }
+ }
+}
+
+function newItem(barcodeValue=''){
+ editItemId=null;
+ itemForm.classList.remove('hidden');
+ barcode.value=barcodeValue;
+ itemName.value=qty.value=validade.value=atacado.value=varejo.value='';
 }
 
 function saveItem(){
- const data={groupId:currentGroup,barcode:barcode.value,name:itemName.value,qty:qty.value,
- validade:validade.value,atacado:parseFloat(atacado.value||0),varejo:parseFloat(varejo.value||0),updated:Date.now()};
+ const data={
+  groupId:currentGroup,
+  barcode:barcode.value.replace(/\D/g,''),
+  name:itemName.value,
+  qty:qty.value,
+  validade:validade.value,
+  atacado:parseFloat(atacado.value||0),
+  varejo:parseFloat(varejo.value||0),
+  updated:Date.now()
+ };
  const store=db.transaction('items','readwrite').objectStore('items');
  editItemId?(data.id=editItemId,store.put(data)):store.add(data);
  cancelItem();loadItems();
 }
 
-function cancelItem(){itemForm.classList.add('hidden');editItemId=null;barcode.value=itemName.value=qty.value=validade.value=atacado.value=varejo.value=''}
+function cancelItem(){itemForm.classList.add('hidden');editItemId=null}
 
-function editItem(id){editItemId=id;
+function editItem(id){
+ editItemId=id;
  db.transaction('items').objectStore('items').get(id).onsuccess=e=>{
-  const i=e.target.result;barcode.value=i.barcode;itemName.value=i.name;qty.value=i.qty;validade.value=i.validade;atacado.value=i.atacado;varejo.value=i.varejo;itemForm.classList.remove('hidden')}
+  const i=e.target.result;
+  barcode.value=i.barcode;
+  itemName.value=i.name;
+  qty.value=i.qty;
+  validade.value=i.validade;
+  atacado.value=i.atacado;
+  varejo.value=i.varejo;
+  itemForm.classList.remove('hidden');
+ }
 }
 
 function delItem(id){if(confirm('Excluir item?')){
- db.transaction('items','readwrite').objectStore('items').delete(id);loadItems();}}
+ db.transaction('items','readwrite').objectStore('items').delete(id);
+ loadItems();
+}}
 
-function scanAndEdit(){
- Quagga.init({inputStream:{type:'LiveStream',target:document.body},decoder:{readers:['ean_reader','code_128_reader']}},err=>{if(!err)Quagga.start()});
+function scanBarcode(){
+ scanner.classList.remove('hidden');
+ Quagga.init({
+  inputStream:{type:'LiveStream',target:scanner},
+  decoder:{readers:['ean_reader','code_128_reader']}
+ },err=>{if(!err)Quagga.start()});
+
  Quagga.onDetected(d=>{
-  const code=d.codeResult.code;Quagga.stop();
+  const code=d.codeResult.code.replace(/\D/g,'');
+  Quagga.stop();
+  scanner.classList.add('hidden');
+
   const idx=db.transaction('items').objectStore('items').index('barcode');
   idx.get(code).onsuccess=e=>{
-   if(e.target.result){editItem(e.target.result.id)}else alert('Item não encontrado')}
- })}
-
-function color(d){const days=(Date.now()-d)/86400000;if(days<1)return'green';if(days<=25)return'white';return'red'}
+   if(e.target.result){
+    editItem(e.target.result.id);
+   }else{
+    newItem(code);
+   }
+  }
+ });
+}
 
 /* BACKUP */
 function backupMenu(){
@@ -159,11 +230,18 @@ function backupMenu(){
 function exportBackup(){
  const data={groups:[],items:[]};
  db.transaction('groups').objectStore('groups').openCursor().onsuccess=e=>{
-  const c=e.target.result;if(c){data.groups.push(c.value);c.continue()}else{
+  const c=e.target.result;
+  if(c){data.groups.push(c.value);c.continue()}
+  else{
    db.transaction('items').objectStore('items').openCursor().onsuccess=e2=>{
-    const c2=e2.target.result;if(c2){data.items.push(c2.value);c2.continue()}else{
+    const c2=e2.target.result;
+    if(c2){data.items.push(c2.value);c2.continue()}
+    else{
      const blob=new Blob([JSON.stringify(data)],{type:'application/json'});
-     const a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download='backup_mercado.json';a.click();
+     const a=document.createElement('a');
+     a.href=URL.createObjectURL(blob);
+     a.download='backup_mercado.json';
+     a.click();
     }
    }
   }
@@ -171,26 +249,24 @@ function exportBackup(){
 }
 
 function importBackup(){
- if(!confirm('TEM CERTEZA? Todos os dados atuais serão apagados!'))return;
- const input=document.createElement('input');input.type='file';input.accept='.json';
+ if(!confirm('TODOS os dados atuais serão apagados. Continuar?'))return;
+ const input=document.createElement('input');
+ input.type='file';input.accept='.json';
  input.onchange=e=>{
-  const file=e.target.files[0];const r=new FileReader();
+  const r=new FileReader();
   r.onload=()=>{
    const data=JSON.parse(r.result);
    const tx=db.transaction(['groups','items'],'readwrite');
-   tx.objectStore('groups').clear();tx.objectStore('items').clear();
+   tx.objectStore('groups').clear();
+   tx.objectStore('items').clear();
    data.groups.forEach(g=>tx.objectStore('groups').add(g));
    data.items.forEach(i=>tx.objectStore('items').add(i));
    tx.oncomplete=()=>loadGroups();
-  };r.readAsText(file);
+  };
+  r.readAsText(e.target.files[0]);
  };
  input.click();
 }
-
-if ("serviceWorker" in navigator) {
-  navigator.serviceWorker.register("service-worker.js");
-}
-
 </script>
 </body>
 </html>
