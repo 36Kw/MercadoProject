@@ -1,13 +1,6 @@
 <!DOCTYPE html>
 <html lang="pt-BR">
 <head>
-<link rel="manifest" href="manifest.json">
-
-<script>
-if ('serviceWorker' in navigator) {
-  navigator.serviceWorker.register('service-worker.js');
-}
-</script>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Mercado Offline</title>
@@ -146,44 +139,7 @@ function delItem(id){if(confirm('Excluir item?')){
  db.transaction('items','readwrite').objectStore('items').delete(id);loadItems();}}
 
 function scanAndEdit(){
- if(!('mediaDevices' in navigator)){
-  alert('Câmera não suportada neste navegador');return;
- }
- navigator.mediaDevices.getUserMedia({video:{facingMode:'environment'}})
- .then(stream=>{
-  const overlay=document.createElement('div');
-  overlay.id='scanner';
-  overlay.innerHTML=`<video autoplay playsinline></video><button onclick="stopScan()">Cancelar</button>`;
-  document.body.appendChild(overlay);
-  const video=overlay.querySelector('video');
-  video.srcObject=stream;
-  Quagga.init({
-   inputStream:{type:'LiveStream',target:video,constraints:{facingMode:'environment'}},
-   decoder:{readers:['ean_reader','ean_13_reader','code_128_reader']}
-  },err=>{if(!err)Quagga.start()});
-  Quagga.onDetected(res=>{
-   const code=res.codeResult.code;
-   stopScan();
-   findOrCreateByBarcode(code);
-  });
- });
-}
-
-function stopScan(){Quagga.stop();const s=document.getElementById('scanner');if(s)s.remove();}
-
-function findOrCreateByBarcode(code){
- const store=db.transaction('items').objectStore('items');
- const req=store.openCursor();
- req.onsuccess=e=>{
-  const c=e.target.result;
-  if(c){
-   if(c.value.barcode===code){editItem(c.value.id);return;}
-   c.continue();
-  }else{
-   barcode.value=code;editItemId=null;itemForm.classList.remove('hidden');
-  }
- }
-},decoder:{readers:['ean_reader','code_128_reader']}},err=>{if(!err)Quagga.start()});
+ Quagga.init({inputStream:{type:'LiveStream',target:document.body},decoder:{readers:['ean_reader','code_128_reader']}},err=>{if(!err)Quagga.start()});
  Quagga.onDetected(d=>{
   const code=d.codeResult.code;Quagga.stop();
   const idx=db.transaction('items').objectStore('items').index('barcode');
@@ -230,6 +186,11 @@ function importBackup(){
  };
  input.click();
 }
+
+if ("serviceWorker" in navigator) {
+  navigator.serviceWorker.register("service-worker.js");
+}
+
 </script>
 </body>
 </html>

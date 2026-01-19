@@ -1,6 +1,7 @@
 {
   "name": "Mercado Offline",
   "short_name": "Mercado",
+  "description": "Controle de produtos e estoque offline",
   "start_url": "./index.html",
   "display": "standalone",
   "background_color": "#2ecc71",
